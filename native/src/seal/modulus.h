@@ -359,6 +359,22 @@ namespace seal
         */
         SEAL_NODISCARD std::uint64_t reduce(std::uint64_t value) const;
 
+        /**
+        Returns the inverse of value modulo 2^64.
+        */
+        SEAL_NODISCARD inline std::uint64_t inverse() const noexcept
+        {
+            return inverse_mod_2e64_;
+        }
+
+        /**
+        Returns 2^64 mod value, in fast Barrett multiplication structure.
+        */
+        SEAL_NODISCARD inline const std::array<std::uint64_t, 2> &residue() const noexcept
+        {
+            return residue_2e64_;
+        }
+
     private:
         void set_value(std::uint64_t value);
 
@@ -368,7 +384,11 @@ namespace seal
 
         std::uint64_t value_ = 0;
 
-        std::array<std::uint64_t, 3> const_ratio_{ { 0, 0, 0 } };
+        std::array<std::uint64_t, 3> const_ratio_ { { 0, 0, 0 } };
+
+        std::uint64_t inverse_mod_2e64_ = 0;
+
+        std::array<std::uint64_t, 2> residue_2e64_ { { 0, 0 } };
 
         std::size_t uint64_count_ = 0;
 

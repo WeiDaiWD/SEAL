@@ -252,6 +252,25 @@ namespace seal
         }
 
         /**
+        Returns operand * 2^64 / modulus.
+        */
+        SEAL_NODISCARD inline std::uint64_t multiply_uint_mod_fast_operand(std::uint64_t operand, const Modulus &modulus)
+        {
+#ifdef SEAL_DEBUG
+                if (operand >= modulus.value())
+                {
+                    throw std::invalid_argument("input must be less than modulus");
+                }
+#endif
+            unsigned long long h;
+            multiply_uint64_hw64(operand, modulus.residue()[1], &h);
+            std::uint64_t r = operand * modulus.residue()[0] - h * modulus.value();
+            r -= (modulus.value() & static_cast<std::uint64_t>(-static_cast<std::int64_t>(r >= modulus.value())));
+            r *= - modulus.inverse();
+            return r;
+        }
+
+        /**
         This struct contains a operand and a precomputed quotient: (operand << 64) / modulus, for a specific modulus.
         When passed to multiply_uint_mod, a faster variant of Barrett reduction will be performed.
         Operand must be less than modulus.
@@ -263,16 +282,23 @@ namespace seal
 
             void set_quotient(const Modulus &modulus)
             {
-#ifdef SEAL_DEBUG
-                if (operand >= modulus.value())
+                if (modulus.value() & 0x1)
                 {
-                    throw std::invalid_argument("input must be less than modulus");
+                    quotient = multiply_uint_mod_fast_operand(operand, modulus);
                 }
+                else
+                {
+#ifdef SEAL_DEBUG
+                    if (operand >= modulus.value())
+                    {
+                        throw std::invalid_argument("input must be less than modulus");
+                    }
 #endif
-                std::uint64_t wide_quotient[2]{ 0, 0 };
-                std::uint64_t wide_coeff[2]{ 0, operand };
-                divide_uint128_inplace(wide_coeff, modulus.value(), wide_quotient);
-                quotient = wide_quotient[0];
+                    std::uint64_t wide_quotient[2]{ 0, 0 };
+                    std::uint64_t wide_coeff[2]{ 0, operand };
+                    divide_uint128_inplace(wide_coeff, modulus.value(), wide_quotient);
+                    quotient = wide_quotient[0];
+                }
             }
 
             void set(std::uint64_t new_operand, const Modulus &modulus)
@@ -294,7 +320,7 @@ namespace seal
         Correctness: modulus should be at most 63-bit, and y must be less than modulus.
         */
         SEAL_NODISCARD inline std::uint64_t multiply_uint_mod(
-            std::uint64_t x, MultiplyUIntModOperand y, const Modulus &modulus)
+            std::uint64_t x, const MultiplyUIntModOperand &y, const Modulus &modulus)
         {
 #ifdef SEAL_DEBUG
             if (y.operand >= modulus.value())
@@ -315,7 +341,7 @@ namespace seal
         Correctness: modulus should be at most 63-bit, and y must be less than modulus.
         */
         SEAL_NODISCARD inline std::uint64_t multiply_uint_mod_lazy(
-            std::uint64_t x, MultiplyUIntModOperand y, const Modulus &modulus)
+            std::uint64_t x, const MultiplyUIntModOperand &y, const Modulus &modulus)
         {
 #ifdef SEAL_DEBUG
             if (y.operand >= modulus.value())

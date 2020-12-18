@@ -97,10 +97,31 @@ namespace seal
             // We store also the remainder
             const_ratio_[2] = numerator[0];
 
-            uint64_count_ = 1;
+            if (value_ & 0x1)
+            {
+                // Compute inverse of value mod 2^64, a.k.a. the (2^63-1)-th power of value mod 2^64
+                inverse_mod_2e64_ = 1;
+                uint64_t temp = value_;
+                for (size_t i = 0; i < 63; i++)
+                {
+                    inverse_mod_2e64_ *= temp;
+                    temp *= temp;
+                }
+
+                // Compute 2^64 mod value, in fast Barrett multiplication structure
+                residue_2e64_[0] = - const_ratio_[1] * value_;
+                numerator[0] = 0;
+                numerator[1] = residue_2e64_[0];
+                quotient[0] = 0;
+                quotient[1] = 0;
+                divide_uint128_inplace(numerator, value_, quotient);
+                residue_2e64_[1] = quotient[0];
+            }
 
             // Set the primality flag
             is_prime_ = util::is_prime(*this);
+
+            uint64_count_ = 1;
         }
     }
 
