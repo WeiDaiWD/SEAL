@@ -12,13 +12,15 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin)
 
 add_executable(sealbench)
 
+set(CMAKE_BUILD_TYPE "Debug")
+
 target_sources(sealbench
     PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}/bench.cpp
         ${CMAKE_CURRENT_LIST_DIR}/bfv.cpp
-        ${CMAKE_CURRENT_LIST_DIR}/ckks.cpp
-        ${CMAKE_CURRENT_LIST_DIR}/common.cpp
-        ${CMAKE_CURRENT_LIST_DIR}/util.cpp
+##        ${CMAKE_CURRENT_LIST_DIR}/ckks.cpp
+##        ${CMAKE_CURRENT_LIST_DIR}/common.cpp
+##        ${CMAKE_CURRENT_LIST_DIR}/util.cpp
 )
 
 if(TARGET SEAL::seal)

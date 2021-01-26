@@ -1,9 +1,9 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+#include "bench.h"
 #include <benchmark/benchmark.h>
 #include <seal/seal.h>
-#include "bench.h"
 using namespace benchmark;
 using namespace seal;
 using namespace std;
@@ -48,6 +48,10 @@ namespace sealbench
     void bm_keygen_relin(State &state, const EncryptionParameters &parms)
     {
         global_bench_set->initialize(parms);
+        if (!global_bench_set->context().using_keyswitching())
+        {
+            state.SkipWithError("Relinearization is disabled for this parameter set.");
+        }
         RelinKeys rlk;
         for (auto _ : state)
         {
@@ -58,6 +62,10 @@ namespace sealbench
     void bm_keygen_galois(State &state, const EncryptionParameters &parms)
     {
         global_bench_set->initialize(parms);
+        if (!global_bench_set->context().using_keyswitching())
+        {
+            state.SkipWithError("Galois automorphism is disabled for this parameter set.");
+        }
         GaloisKeys glk;
         for (auto _ : state)
         {

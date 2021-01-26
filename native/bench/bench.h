@@ -7,39 +7,30 @@
 namespace sealbench
 {
     /**
-    Class BenchSet contains a set of required precomputed/preconstructed objects to setup a benchmark case.
-    A global BenchSet object is only initialized when a benchmark case for a EncryptionParameters is requested.
+    Class BenchEnv contains a set of required precomputed/preconstructed objects to setup a benchmark case.
+    A global BenchEnv object is only initialized when a benchmark case for a EncryptionParameters is requested.
     Since benchmark cases for the same parameters are registered together, this avoids heavy precomputation.
     */
-    class BenchSet
+    class BenchEnv
     {
     public:
-        BenchSet() = delete;
+        BenchEnv() = delete;
 
-        BenchSet(const seal::EncryptionParameters &parms) : parms_(parms), context_(seal::SEALContext(parms_))
-        {}
-
-        /**
-        Skipped if parms is the same with current parms_.
-        */
-        void initialize(const seal::EncryptionParameters &parms)
+        // Allow insecure parameters for experimental purposes.
+        // DO NOT USE THIS AS AN EXAMPLE.
+        BenchEnv(const seal::EncryptionParameters &parms) : parms_(parms), context_(seal::SEALContext(parms_, false, seal::sec_level_type::none))
         {
-            if (parms == parms_)
-            {
-                return;
-            }
-            parms_ = parms;
-            context_ = seal::SEALContext(parms_, false);
             keygen_ = std::make_shared<seal::KeyGenerator>(context_);
             sk_ = keygen_->secret_key();
             keygen_->create_public_key(pk_);
+            /*
             if (context_.using_keyswitching())
             {
                 keygen_->create_relin_keys(rlk_);
                 galois_elts_all_ = context_.key_context_data()->galois_tool()->get_elts_all();
                 keygen_->create_galois_keys(galois_elts_all_, glk_);
             }
-
+            */
             encryptor_ = std::make_shared<seal::Encryptor>(context_, pk_, sk_);
             decryptor_ = std::make_shared<seal::Decryptor>(context_, sk_);
             if (parms_.scheme() == seal::scheme_type::bfv)
@@ -51,6 +42,12 @@ namespace sealbench
                 ckks_encoder_ = std::make_shared<seal::CKKSEncoder>(context_);
             }
             evaluator_ = std::make_shared<seal::Evaluator>(context_);
+
+            seal::prng_seed_type seed;
+            context_.key_context_data()->parms().random_generator()->create()->generate(seal::prng_seed_byte_count, reinterpret_cast<seal::seal_byte *>(seed.data()));
+            prng_ = seal::UniformRandomGeneratorFactory::DefaultFactory()->create(seed);
+
+            ct_ = seal::util::allocate<seal::Ciphertext>(std::size_t(2), seal::MemoryManager::GetPool());
         }
 
         SEAL_NODISCARD const seal::EncryptionParameters &parms() const
@@ -91,6 +88,11 @@ namespace sealbench
         SEAL_NODISCARD std::shared_ptr<seal::Evaluator> evaluator()
         {
             return evaluator_;
+        }
+
+        SEAL_NODISCARD std::shared_ptr<seal::UniformRandomGenerator> prng()
+        {
+            return prng_;
         }
 
         SEAL_NODISCARD seal::SecretKey &sk()
@@ -138,6 +140,11 @@ namespace sealbench
             return galois_elts_all_;
         }
 
+        SEAL_NODISCARD seal::Ciphertext *ct() const
+        {
+            return ct_.get();
+        }
+
     private:
         seal::EncryptionParameters parms_;
         seal::SEALContext context_;
@@ -147,38 +154,25 @@ namespace sealbench
         std::shared_ptr<seal::BatchEncoder> batch_encoder_{ nullptr };
         std::shared_ptr<seal::CKKSEncoder> ckks_encoder_{ nullptr };
         std::shared_ptr<seal::Evaluator> evaluator_{ nullptr };
+        std::shared_ptr<seal::UniformRandomGenerator> prng_{ nullptr };
         seal::SecretKey sk_;
         seal::PublicKey pk_;
         seal::RelinKeys rlk_;
         seal::GaloisKeys glk_;
         std::vector<std::uint32_t> galois_elts_all_;
-    }; // namespace BenchSet
+        seal::util::Pointer<seal::Ciphertext> ct_;
+    }; // namespace BenchEnv
 
-    extern std::shared_ptr<BenchSet> global_bench_set;
+    extern std::unordered_map<seal::EncryptionParameters, std::shared_ptr<BenchEnv>> global_bench_env;
 
-    /**
-    This is a template to create a benchmark case.
+//    void bm_keygen_secret(benchmark::State &state, const seal::EncryptionParameters &parms);
+//
+//    void bm_keygen_public(benchmark::State &state, const seal::EncryptionParameters &parms);
+//
+//    void bm_keygen_relin(benchmark::State &state, const seal::EncryptionParameters &parms);
+//
+//    void bm_keygen_galois(benchmark::State &state, const seal::EncryptionParameters &parms);
 
-    void bm_category_opname(State &state, const EncryptionParameters &parms)
-    {
-        global_bench_set.initialize(parms);
-
-        // Fast initilization ...
-
-        for (auto _: state)
-        {
-            // operation to measure
-            //bench_set->...;
-        }
-    }
-    */
-
-    void bm_keygen_secret(benchmark::State &state, const seal::EncryptionParameters &parms);
-
-    void bm_keygen_public(benchmark::State &state, const seal::EncryptionParameters &parms);
-
-    void bm_keygen_relin(benchmark::State &state, const seal::EncryptionParameters &parms);
-
-    void bm_keygen_galois(benchmark::State &state, const seal::EncryptionParameters &parms);
+    void bm_bfv_mul_ct(benchmark::State &state, std::shared_ptr<BenchEnv> bench_env);
 
 } // namespace sealbench
