@@ -47,7 +47,11 @@ namespace sealbench
             context_.key_context_data()->parms().random_generator()->create()->generate(seal::prng_seed_byte_count, reinterpret_cast<seal::seal_byte *>(seed.data()));
             prng_ = seal::UniformRandomGeneratorFactory::DefaultFactory()->create(seed);
 
-            ct_ = seal::util::allocate<seal::Ciphertext>(std::size_t(2), seal::MemoryManager::GetPool());
+            ct_.resize(std::size_t(2));
+            for (std::size_t i = 0; i < 2; i++)
+            {
+                ct_[i].resize(context_, std::size_t(2));
+            }
         }
 
         SEAL_NODISCARD const seal::EncryptionParameters &parms() const
@@ -140,9 +144,9 @@ namespace sealbench
             return galois_elts_all_;
         }
 
-        SEAL_NODISCARD seal::Ciphertext *ct() const
+        SEAL_NODISCARD std::vector<seal::Ciphertext> &ct()
         {
-            return ct_.get();
+            return ct_;
         }
 
     private:
@@ -160,7 +164,7 @@ namespace sealbench
         seal::RelinKeys rlk_;
         seal::GaloisKeys glk_;
         std::vector<std::uint32_t> galois_elts_all_;
-        seal::util::Pointer<seal::Ciphertext> ct_;
+        std::vector<seal::Ciphertext> ct_;
     }; // namespace BenchEnv
 
     extern std::unordered_map<seal::EncryptionParameters, std::shared_ptr<BenchEnv>> global_bench_env;

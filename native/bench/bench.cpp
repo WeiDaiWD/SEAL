@@ -21,12 +21,12 @@ namespace sealbench
     template <class Lambda, class... Args>
     internal::Benchmark *register_bm(string name, Lambda &&fn, Args &&... args)
     {
-        return RegisterBenchmark(name.c_str(), [=](State &st) { fn(st, args...); })->Unit(benchmark::kMicrosecond);
+        return RegisterBenchmark(name.c_str(), [=](State &st) { fn(st, args...); })->Unit(benchmark::kMicrosecond)->Iterations(10);
     }
 
 #define SEAL_BENCHMARK_REGISTER(category, n, log_q, name, func, ...)                                                \
     register_bm(                                                                                                    \
-        string("n=") + to_string(n) + string(" / log_q=") + to_string(log_q) + string(#category " / " #name), func, \
+        string("n=") + to_string(n) + string(" / log_q=") + to_string(log_q) + string(" / " #category " / " #name), func, \
         __VA_ARGS__)
 
     void register_bm_family(const pair<size_t, vector<Modulus>> &parms)
@@ -135,28 +135,3 @@ int main(int argc, char **argv)
     Initialize(&argc, argv);
     RunSpecifiedBenchmarks();
 }
-
-/*
-Program received signal SIGSEGV, Segmentation fault.
-__memmove_avx_unaligned_erms () at ../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:416
-416	../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S: No such file or directory.
-(gdb) bt
-#0  __memmove_avx_unaligned_erms () at ../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:416
-#1  0x0000000000454f3d in seal::UniformRandomGenerator::generate(unsigned long, std::byte*) ()
-#2  0x0000000000469633 in seal::util::sample_poly_uniform(std::shared_ptr<seal::UniformRandomGenerator>, seal::EncryptionParameters const&, unsigned long*) ()
-#3  0x000000000041d50b in sealbench::bm_bfv_mul_ct (state=..., bench_env=warning: RTTI symbol not found for class 'std::_Sp_counted_ptr_inplace<sealbench::BenchEnv, std::allocator<sealbench::BenchEnv>, (__gnu_cxx::_Lock_policy)2>'
-warning: RTTI symbol not found for class 'std::_Sp_counted_ptr_inplace<sealbench::BenchEnv, std::allocator<sealbench::BenchEnv>, (__gnu_cxx::_Lock_policy)2>'
-
-std::shared_ptr<sealbench::BenchEnv> (use count 3, weak count 0) = {...})
-    at /home/weidai/Repositories/SEAL-Wei/native/bench/bfv.cpp:27
-#4  0x0000000000411228 in sealbench::register_bm<void (&)(benchmark::State&, std::shared_ptr<sealbench::BenchEnv>), std::shared_ptr<sealbench::BenchEnv>&>(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, void (&)(benchmark::State&, std::shared_ptr<sealbench::BenchEnv>), std::shared_ptr<sealbench::BenchEnv>&)::{lambda(benchmark::State&)#1}::operator()(benchmark::State&) const (this=0x3a8a1d0, st=...) at /home/weidai/Repositories/SEAL-Wei/native/bench/bench.cpp:24
-#5  0x00000000004111d6 in benchmark::internal::LambdaBenchmark<sealbench::register_bm<void (&)(benchmark::State&, std::shared_ptr<sealbench::BenchEnv>), std::shared_ptr<sealbench::BenchEnv>&>(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, void (&)(benchmark::State&, std::shared_ptr<sealbench::BenchEnv>), std::shared_ptr<sealbench::BenchEnv>&)::{lambda(benchmark::State&)#1}>::Run(benchmark::State&) (this=0x3a8a110, st=...)
-    at /usr/local/include/benchmark/benchmark.h:1021
-#6  0x0000000000560112 in benchmark::internal::BenchmarkInstance::Run(unsigned long, int, benchmark::internal::ThreadTimer*, benchmark::internal::ThreadManager*) const ()
-#7  0x000000000054d2b1 in benchmark::internal::(anonymous namespace)::RunInThread(benchmark::internal::BenchmarkInstance const*, unsigned long, int, benchmark::internal::ThreadManager*) ()
-#8  0x000000000054bce2 in benchmark::internal::RunBenchmark(benchmark::internal::BenchmarkInstance const&, std::vector<benchmark::BenchmarkReporter::Run, std::allocator<benchmark::BenchmarkReporter::Run> >*) ()
-#9  0x000000000052c793 in benchmark::RunSpecifiedBenchmarks(benchmark::BenchmarkReporter*, benchmark::BenchmarkReporter*) ()
-#10 0x0000000000408c1b in main (argc=1, argv=0x7fffffffde38) at /home/weidai/Repositories/SEAL-Wei/native/bench/bench.cpp:136
-(gdb) 
-
-*/

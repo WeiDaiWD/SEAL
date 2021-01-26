@@ -20,7 +20,7 @@ namespace sealbench
     {
         auto &parms = bench_env->parms();
         auto prng = bench_env->prng();
-        Ciphertext *ct = bench_env->ct();
+        vector<Ciphertext> &ct = bench_env->ct();
         for (auto _ : state)
         {
             state.PauseTiming();
@@ -29,7 +29,8 @@ namespace sealbench
             util::sample_poly_uniform(prng, parms, ct[1].data(0));
             util::sample_poly_uniform(prng, parms, ct[1].data(1));
             state.ResumeTiming();
-            bench_env->evaluator()->multiply_inplace(ct[0], ct[1]);
+            Ciphertext res;
+            bench_env->evaluator()->multiply(ct[0], ct[1], res);
         }
     }
 } // namespace sealbench
