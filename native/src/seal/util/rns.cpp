@@ -442,6 +442,7 @@ namespace seal
                         SEAL_ITERATE(iter(get<0>(I), temp), count, [&](auto J) {
                             // Reduce modulo ibase element
                             get<1>(J)[ibase_index] = barrett_reduce_64(get<0>(J), get<2>(I));
+                            //get<1>(J)[ibase_index] = get<0>(J); // TODO: faster but RNSToolTest.FastFloor fails
                         });
                     }
                     else
@@ -458,6 +459,62 @@ namespace seal
                 SEAL_ITERATE(iter(get<0>(I), temp), count, [&](auto J) {
                     // Compute the base conversion sum modulo obase element
                     get<0>(J) = dot_product_mod(get<1>(J), get<1>(I).get(), ibase_size, get<2>(I));
+                });
+            });
+        }
+
+        void BaseConverter::fast_convert_array_hps(ConstRNSIter in, RNSIter out, MemoryPoolHandle pool) const
+        {
+#ifdef SEAL_DEBUG
+            if (in.poly_modulus_degree() != out.poly_modulus_degree())
+            {
+                throw invalid_argument("in and out are incompatible");
+            }
+#endif
+            size_t ibase_size = ibase_.size();
+            size_t obase_size = obase_.size();
+            size_t count = in.poly_modulus_degree();
+
+            // Note that the stride size is ibase_size
+            SEAL_ALLOCATE_GET_STRIDE_ITER(temp, uint64_t, count, ibase_size, pool);
+
+            SEAL_ITERATE(
+                iter(in, ibase_.inv_punctured_prod_mod_base_array(), ibase_.base(), size_t(0)), ibase_size,
+                [&](auto I) {
+                    // The current ibase index
+                    size_t ibase_index = get<3>(I);
+
+                    if (get<1>(I).operand == 1)
+                    {
+                        // No multiplication needed
+                        SEAL_ITERATE(iter(get<0>(I), temp), count, [&](auto J) {
+                            // Reduce modulo ibase element
+                            get<1>(J)[ibase_index] = barrett_reduce_64(get<0>(J), get<2>(I));
+                            //get<1>(J)[ibase_index] = get<0>(J); // TODO: faster but RNSToolTest.FastFloor fails
+                        });
+                    }
+                    else
+                    {
+                        // Multiplication needed
+                        SEAL_ITERATE(iter(get<0>(I), temp), count, [&](auto J) {
+                            // Multiply coefficient of in with ibase_.inv_punctured_prod_mod_base_array_ element
+                            get<1>(J)[ibase_index] = multiply_uint_mod(get<0>(J), get<1>(I), get<2>(I));
+                        });
+                    }
+            });
+
+            SEAL_ALLOCATE_GET_PTR_ITER(multiples, size_t, count, pool);
+
+            SEAL_ITERATE(iter(out, base_change_matrix_, base_change_correction_, obase_.base()), obase_size, [&](auto I) {
+                SEAL_ITERATE(iter(get<0>(I), temp, multiples), count, [&](auto J) {
+                    double v = 0.0;
+                    SEAL_ITERATE(iter(get<1>(J), ibase_.base()), ibase_size, [&](auto K) {
+                        v += static_cast<double>(get<0>(K)) / static_cast<double>(get<1>(K).value());
+                    });
+                    get<2>(J) = static_cast<size_t>(round(v));
+                    // Compute the base conversion sum modulo obase element
+                    get<0>(J) = dot_product_mod(get<1>(J), get<1>(I).get(), ibase_size, get<3>(I));
+                    get<0>(J) = sub_uint_mod(get<0>(J), get<2>(I)[get<2>(J)], get<3>(I));
                 });
             });
         }
@@ -482,6 +539,22 @@ namespace seal
                     // Base-change matrix contains the punctured products of ibase elements modulo the obase
                     get<0>(J) = modulo_uint(get<1>(J), ibase_.size(), get<1>(I));
                 });
+            });
+
+            // Create the base-change correction rows
+            base_change_correction_ = allocate<Pointer<uint64_t>>(obase_.size(), pool_);
+
+            SEAL_ITERATE(iter(base_change_correction_, obase_.base()), obase_.size(), [&](auto I) {
+                // Create the base-change correction columns
+                get<0>(I) = allocate_uint(add_safe(ibase_.size(), size_t(1)), pool_);
+
+                // Base-change correction contains 0 ~ ibase_.size() multiples of ibase_.base_prod() modulo the obase
+                get<0>(I)[0] = 0;
+                get<0>(I)[1] = modulo_uint(ibase_.base_prod(), ibase_.size(), get<1>(I));
+                for (size_t i = 2; i <= ibase_.size(); i++)
+                {
+                    get<0>(I)[i] = add_uint_mod(get<0>(I)[i - 1], get<0>(I)[1], get<1>(I));
+                }
             });
         }
 
@@ -584,6 +657,9 @@ namespace seal
 
             // Set up BaseConverter for q --> Bsk
             base_q_to_Bsk_conv_ = allocate<BaseConverter>(pool_, *base_q_, *base_Bsk_, pool_);
+
+            // Set up BaseConverter for q --> B
+            base_q_to_B_conv_ = allocate<BaseConverter>(pool_, *base_q_, *base_B_, pool_);
 
             // Set up BaseConverter for q --> {m_tilde}
             base_q_to_m_tilde_conv_ = allocate<BaseConverter>(pool_, *base_q_, RNSBase({ m_tilde_ }, pool_), pool_);
@@ -1035,6 +1111,83 @@ namespace seal
 
             // Finally convert to {m_tilde}
             base_q_to_m_tilde_conv_->fast_convert_array(temp, destination + base_Bsk_size, pool);
+        }
+
+        void RNSTool::hps_fastbconv_B(ConstRNSIter input, RNSIter destination, MemoryPoolHandle pool) const
+        {
+#ifdef SEAL_DEBUG
+            if (input == nullptr)
+            {
+                throw invalid_argument("input cannot be null");
+            }
+            if (input.poly_modulus_degree() != coeff_count_)
+            {
+                throw invalid_argument("input is not valid for encryption parameters");
+            }
+            if (!destination)
+            {
+                throw invalid_argument("destination cannot be null");
+            }
+            if (destination.poly_modulus_degree() != coeff_count_)
+            {
+                throw invalid_argument("destination is not valid for encryption parameters");
+            }
+            if (!pool)
+            {
+                throw invalid_argument("pool is uninitialized");
+            }
+#endif
+            /*
+            Require: Input in q
+            Ensure: Output in B
+            */
+
+            size_t base_q_size = base_q_->size();
+            size_t base_B_size = base_B_->size();
+
+            // Now convert to B
+            base_q_to_B_conv_->fast_convert_array_hps(input, destination, pool);
+        }
+
+        void RNSTool::hps_fast_scale_floor(ConstRNSIter input_q, ConstRNSIter input_B, RNSIter destination, MemoryPoolHandle pool) const
+        {
+
+        }
+
+        void RNSTool::hps_fastbconv_q(ConstRNSIter input, RNSIter destination, MemoryPoolHandle pool) const
+        {
+#ifdef SEAL_DEBUG
+            if (input == nullptr)
+            {
+                throw invalid_argument("input cannot be null");
+            }
+            if (input.poly_modulus_degree() != coeff_count_)
+            {
+                throw invalid_argument("input is not valid for encryption parameters");
+            }
+            if (!destination)
+            {
+                throw invalid_argument("destination cannot be null");
+            }
+            if (destination.poly_modulus_degree() != coeff_count_)
+            {
+                throw invalid_argument("destination is not valid for encryption parameters");
+            }
+            if (!pool)
+            {
+                throw invalid_argument("pool is uninitialized");
+            }
+#endif
+            /*
+            Require: Input in B
+            Ensure: Output in q
+            */
+
+            size_t base_B_size = base_B_->size();
+            size_t base_q_size = base_q_->size();
+
+            // Now convert to q
+            base_B_to_q_conv_->fast_convert_array_hps(input, destination, pool);
         }
 
         void RNSTool::decrypt_scale_and_round(ConstRNSIter input, CoeffIter destination, MemoryPoolHandle pool) const

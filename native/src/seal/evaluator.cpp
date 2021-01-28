@@ -309,11 +309,24 @@ namespace seal
         }
 
         auto rns_tool = context_data.rns_tool();
+#ifdef SEAL_USE_BEHZ
         size_t base_Bsk_size = rns_tool->base_Bsk()->size();
         size_t base_Bsk_m_tilde_size = rns_tool->base_Bsk_m_tilde()->size();
+#else
+        size_t base_B_size = rns_tool->base_B()->size();
+#endif
 
         // Determine destination.size()
         size_t dest_size = sub_safe(add_safe(encrypted1_size, encrypted2_size), size_t(1));
+
+        // TODO: remove
+        size_t base_Bsk_size = rns_tool->base_Bsk()->size();
+        size_t base_Bsk_m_tilde_size = rns_tool->base_Bsk_m_tilde()->size();
+        SEAL_ALLOCATE_ZERO_GET_POLY_ITER(temp_dest_Bsk, dest_size, coeff_count, base_Bsk_size, pool);
+        auto base_Bsk = iter(rns_tool->base_Bsk()->base());
+        auto base_Bsk_ntt_tables = iter(rns_tool->base_Bsk_ntt_tables()); // TODO: rename to base_B_ntt_tables()
+        SEAL_ALLOCATE_GET_POLY_ITER(encrypted1_Bsk, encrypted1_size, coeff_count, base_Bsk_size, pool);
+        SEAL_ALLOCATE_GET_POLY_ITER(encrypted2_Bsk, encrypted2_size, coeff_count, base_Bsk_size, pool);
 
         // Size check
         if (!product_fits_in(dest_size, coeff_count, base_Bsk_m_tilde_size))
@@ -321,14 +334,14 @@ namespace seal
             throw logic_error("invalid parameters");
         }
 
-        // Set up iterators for bases
+        // Set up iterators for bases and NTT tables
         auto base_q = iter(parms.coeff_modulus());
-        auto base_Bsk = iter(rns_tool->base_Bsk()->base());
-
-        // Set up iterators for NTT tables
         auto base_q_ntt_tables = iter(context_data.small_ntt_tables());
-        auto base_Bsk_ntt_tables = iter(rns_tool->base_Bsk_ntt_tables());
 
+//#define SEAL_USE_BEHZ
+#ifdef SEAL_USE_BEHZ
+        auto base_Bsk = iter(rns_tool->base_Bsk()->base());
+        auto base_Bsk_ntt_tables = iter(rns_tool->base_Bsk_ntt_tables());
         // Microsoft SEAL uses BEHZ-style RNS multiplication. This process is somewhat complex and consists of the
         // following steps:
         //
@@ -372,26 +385,75 @@ namespace seal
             // Lazy reduction
             ntt_negacyclic_harvey_lazy(get<2>(I), base_Bsk_size, base_Bsk_ntt_tables);
         };
+#else
+        auto base_B = iter(rns_tool->base_B()->base());
+        auto base_B_ntt_tables = iter(rns_tool->base_Bsk_ntt_tables()); // TODO: rename to base_B_ntt_tables()
+        // Microsoft SEAL uses HPS-style RNS multiplication. This process is somewhat complex and consists of the
+        // following steps:
+        //
+        // (1) Lift encrypted1 and encrypted2 (initially in base q) to an extended base q U B
+        // (2) do nothing
+        // (3) Transform the data to NTT form
+        // (4) Compute the ciphertext polynomial product using dyadic multiplication
+        // (5) Transform the data back from NTT form
+        // (6) Multiply the result by t (plain_modulus)
+        // (7) Scale the result by q using a divide-and-floor algorithm, switching base to B
+        // (8) Use Shenoy-Kumaresan method to convert the result to base q
 
-        // Allocate space for a base q output of behz_extend_base_convert_to_ntt for encrypted1
+        // This lambda function takes as input an IterTuple with three components:
+        //
+        // 1. (Const)RNSIter to read an input polynomial from
+        // 2. RNSIter for the output in base q
+        // 3. RNSIter for the output in base B
+        //
+        // It performs steps (1)-(2) of the HPS multiplication (see above) on the given input polynomial (given as an
+        // RNSIter or ConstRNSIter) and writes the results in base q and base Bsk to the given output
+        // iterators.
+        auto hps_extend_base_convert_to_ntt = [&](auto I) {
+            // Make copy of input polynomial (in base q) and convert to NTT form
+            // Lazy reduction
+            set_poly(get<0>(I), coeff_count, base_q_size, get<1>(I));
+            //ntt_negacyclic_harvey_lazy(get<1>(I), base_q_size, base_q_ntt_tables);
+
+            // (1&2) Convert from base q to base B using HPS RNS
+            rns_tool->hps_fastbconv_B(get<0>(I), get<2>(I), pool);
+
+            // Transform to NTT form in base B
+            // Lazy reduction
+            //ntt_negacyclic_harvey_lazy(get<2>(I), base_B_size, base_B_ntt_tables);
+        };
+#endif
+
+        // Allocate space for a base q output of behz_extend_base_convert_to_ntt for encrypted1 and encrypted2
         SEAL_ALLOCATE_GET_POLY_ITER(encrypted1_q, encrypted1_size, coeff_count, base_q_size, pool);
-
-        // Allocate space for a base Bsk output of behz_extend_base_convert_to_ntt for encrypted1
-        SEAL_ALLOCATE_GET_POLY_ITER(encrypted1_Bsk, encrypted1_size, coeff_count, base_Bsk_size, pool);
-
-        // Perform BEHZ steps (1)-(3) for encrypted1
-        SEAL_ITERATE(iter(encrypted1, encrypted1_q, encrypted1_Bsk), encrypted1_size, behz_extend_base_convert_to_ntt);
-
-        // Repeat for encrypted2
         SEAL_ALLOCATE_GET_POLY_ITER(encrypted2_q, encrypted2_size, coeff_count, base_q_size, pool);
+
+#ifdef SEAL_USE_BEHZ
+        // Allocate space for a base Bsk output of behz_extend_base_convert_to_ntt for encrypted1 and encrypted2
+        SEAL_ALLOCATE_GET_POLY_ITER(encrypted1_Bsk, encrypted1_size, coeff_count, base_Bsk_size, pool);
         SEAL_ALLOCATE_GET_POLY_ITER(encrypted2_Bsk, encrypted2_size, coeff_count, base_Bsk_size, pool);
 
+        // Perform BEHZ steps (1)-(3) for encrypted1 and encrypted2
+        SEAL_ITERATE(iter(encrypted1, encrypted1_q, encrypted1_Bsk), encrypted1_size, behz_extend_base_convert_to_ntt);
         SEAL_ITERATE(iter(encrypted2, encrypted2_q, encrypted2_Bsk), encrypted2_size, behz_extend_base_convert_to_ntt);
+#else
+        // Allocate space for a base B output of hps_extend_base_convert_to_ntt for encrypted1 and encrypted2
+        SEAL_ALLOCATE_GET_POLY_ITER(encrypted1_B, encrypted1_size, coeff_count, base_B_size, pool);
+        SEAL_ALLOCATE_GET_POLY_ITER(encrypted2_B, encrypted2_size, coeff_count, base_B_size, pool);
+
+        // Perform HPS steps (1)-(3) for encrypted1 and encrypted2
+        SEAL_ITERATE(iter(encrypted1, encrypted1_q, encrypted1_B), encrypted1_size, hps_extend_base_convert_to_ntt);
+        SEAL_ITERATE(iter(encrypted2, encrypted2_q, encrypted2_B), encrypted2_size, hps_extend_base_convert_to_ntt);
+#endif
 
         // Allocate temporary space for the output of step (4)
         // We allocate space separately for the base q and the base Bsk components
         SEAL_ALLOCATE_ZERO_GET_POLY_ITER(temp_dest_q, dest_size, coeff_count, base_q_size, pool);
+#ifdef SEAL_USE_BEHZ
         SEAL_ALLOCATE_ZERO_GET_POLY_ITER(temp_dest_Bsk, dest_size, coeff_count, base_Bsk_size, pool);
+#else
+        SEAL_ALLOCATE_ZERO_GET_POLY_ITER(temp_dest_B, dest_size, coeff_count, base_B_size, pool);
+#endif
 
         // Perform BEHZ step (4): dyadic multiplication on arbitrary size ciphertexts
         SEAL_ITERATE(iter(size_t(0)), dest_size, [&](auto I) {
@@ -429,22 +491,33 @@ namespace seal
                 SEAL_ITERATE(iter(shifted_in1_iter, shifted_reversed_in2_iter), steps, [&](auto J) {
                     SEAL_ITERATE(iter(J, base_iter, shifted_out_iter), base_size, [&](auto K) {
                         SEAL_ALLOCATE_GET_COEFF_ITER(temp, coeff_count, pool);
-                        dyadic_product_coeffmod(get<0, 0>(K), get<0, 1>(K), coeff_count, get<1>(K), temp);
+                        //dyadic_product_coeffmod(get<0, 0>(K), get<0, 1>(K), coeff_count, get<1>(K), temp);
                         add_poly_coeffmod(temp, get<2>(K), coeff_count, get<1>(K), get<2>(K));
                     });
                 });
             };
 
-            // Perform the BEHZ ciphertext product both for base q and base Bsk
-            behz_ciphertext_product(encrypted1_q, encrypted2_q, base_q, base_q_size, temp_dest_q);
+            // Perform the BEHZ ciphertext product for base q
+            //behz_ciphertext_product(encrypted1_q, encrypted2_q, base_q, base_q_size, temp_dest_q);
+#ifdef SEAL_USE_BEHZ
+            // Perform the BEHZ ciphertext product for base Bsk
             behz_ciphertext_product(encrypted1_Bsk, encrypted2_Bsk, base_Bsk, base_Bsk_size, temp_dest_Bsk);
+#else
+            // Perform the BEHZ ciphertext product for base B
+            //behz_ciphertext_product(encrypted1_B, encrypted2_B, base_B, base_B_size, temp_dest_B);
+#endif
         });
 
         // Perform BEHZ step (5): transform data from NTT form
         // Lazy reduction here. The following multiply_poly_scalar_coeffmod will correct the value back to [0, p)
-        inverse_ntt_negacyclic_harvey_lazy(temp_dest_q, dest_size, base_q_ntt_tables);
+        //inverse_ntt_negacyclic_harvey_lazy(temp_dest_q, dest_size, base_q_ntt_tables);
+#ifdef SEAL_USE_BEHZ
         inverse_ntt_negacyclic_harvey_lazy(temp_dest_Bsk, dest_size, base_Bsk_ntt_tables);
+#else
+        //inverse_ntt_negacyclic_harvey_lazy(temp_dest_B, dest_size, base_B_ntt_tables);
+#endif
 
+#ifdef SEAL_USE_BEHZ
         // Perform BEHZ steps (6)-(8)
         SEAL_ITERATE(iter(temp_dest_q, temp_dest_Bsk, encrypted1), dest_size, [&](auto I) {
             // Bring together the base q and base Bsk components into a single allocation
@@ -464,6 +537,19 @@ namespace seal
             // Step (8): use Shenoy-Kumaresan method to convert the result to base q and write to encrypted1
             rns_tool->fastbconv_sk(temp_Bsk, get<2>(I), pool);
         });
+#else
+        // Perform HPS steps (6)-(8)
+        SEAL_ITERATE(iter(temp_dest_q, temp_dest_B, encrypted1), dest_size, [&](auto I) {
+            // Allocate yet another temporary for fast divide-and-floor result in base Bsk
+            SEAL_ALLOCATE_GET_RNS_ITER(temp_B, coeff_count, base_B_size, pool);
+
+            // Steps (6)-(7): multiply by t, divide by q, and floor, producing a result in base B
+            rns_tool->hps_fast_scale_floor(get<0>(I), get<1>(I), temp_B, pool);
+
+            // Step (8): convert the result to base q and write to encrypted1
+            rns_tool->hps_fastbconv_q(temp_B, get<2>(I), pool);
+        });
+#endif
 
         // Set the scale
         encrypted1.scale() = new_scale;

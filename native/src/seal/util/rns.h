@@ -164,6 +164,8 @@ namespace seal
 
             void fast_convert_array(ConstRNSIter in, RNSIter out, MemoryPoolHandle pool) const;
 
+            void fast_convert_array_hps(ConstRNSIter in, RNSIter out, MemoryPoolHandle pool) const;
+
         private:
             BaseConverter(const BaseConverter &copy) = delete;
 
@@ -182,6 +184,8 @@ namespace seal
             RNSBase obase_;
 
             Pointer<Pointer<std::uint64_t>> base_change_matrix_;
+
+            Pointer<Pointer<std::uint64_t>> base_change_correction_;
         };
 
         class RNSTool
@@ -228,6 +232,21 @@ namespace seal
             Compute round(t/q * |input|_q) mod t exactly
             */
             void decrypt_scale_and_round(ConstRNSIter phase, CoeffIter destination, MemoryPoolHandle pool) const;
+
+            /**
+            HPS variant: fast base conversion from base_q_ to base_B_
+            */
+            void hps_fastbconv_B(ConstRNSIter input, RNSIter destination, MemoryPoolHandle pool) const;
+
+            /**
+            HPS variant: multiply by t, divide by q, and fast floor from q U B to B
+            */
+            void hps_fast_scale_floor(ConstRNSIter input_q, ConstRNSIter input_B, RNSIter destination, MemoryPoolHandle pool) const;
+
+            /**
+            HPS variant: fast base conversion from base_B_ to base_q_
+            */
+            void hps_fastbconv_q(ConstRNSIter input, RNSIter destination, MemoryPoolHandle pool) const;
 
             SEAL_NODISCARD inline auto inv_q_last_mod_q() const noexcept
             {
@@ -314,6 +333,9 @@ namespace seal
 
             // Base converter: q --> B_sk
             Pointer<BaseConverter> base_q_to_Bsk_conv_;
+
+            // Base converter: q --> B
+            Pointer<BaseConverter> base_q_to_B_conv_;
 
             // Base converter: q --> {m_tilde}
             Pointer<BaseConverter> base_q_to_m_tilde_conv_;
