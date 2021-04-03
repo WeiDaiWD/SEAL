@@ -33,7 +33,7 @@ namespace seal
                     Modulus count: 1
                     Total bit count: 54
                     */
-                    { 2048, { 0x3fffffff000001 } },
+//                    { 2048, { 0x3fffffff000001 } },
 
                     /*
                     Polynomial modulus: 1x^4096 + 1
@@ -63,11 +63,11 @@ namespace seal
                     Modulus count: 16
                     Total bit count: 881 = 15 * 55 + 56
                     */
-                    { 32768,
-                      { 0x7fffffffe90001, 0x7fffffffbf0001, 0x7fffffffbd0001, 0x7fffffffba0001, 0x7fffffffaa0001,
-                        0x7fffffffa50001, 0x7fffffff9f0001, 0x7fffffff7e0001, 0x7fffffff770001, 0x7fffffff380001,
-                        0x7fffffff330001, 0x7fffffff2d0001, 0x7fffffff170001, 0x7fffffff150001, 0x7ffffffef00001,
-                        0xfffffffff70001 } }
+//                    { 32768,
+//                      { 0x7fffffffe90001, 0x7fffffffbf0001, 0x7fffffffbd0001, 0x7fffffffba0001, 0x7fffffffaa0001,
+//                        0x7fffffffa50001, 0x7fffffff9f0001, 0x7fffffff7e0001, 0x7fffffff770001, 0x7fffffff380001,
+//                        0x7fffffff330001, 0x7fffffff2d0001, 0x7fffffff170001, 0x7fffffff150001, 0x7ffffffef00001,
+//                        0xfffffffff70001 } }
                 };
 
                 return default_coeff_modulus_128;
