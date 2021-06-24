@@ -114,7 +114,7 @@ namespace sealtest
             ASSERT_TRUE(fits_in<unsigned>(pos_s));
             ASSERT_TRUE(fits_in<char>(pos_uc));
             ASSERT_FALSE(fits_in<unsigned>(neg_i));
-#if defined(__aarch64__) || defined(_M_ARM64)
+#if defined(__aarch64__) || defined(_M_ARM64) || defined(__powerpc__) || defined(_M_PPC)
             ASSERT_TRUE(fits_in<char>(pos_uc_max));
 #else
             ASSERT_FALSE(fits_in<char>(pos_uc_max));
